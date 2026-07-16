@@ -415,6 +415,10 @@ with col_compte:
                 s_email = st.text_input("Adresse e-mail", key="s_email")
                 s_tel = st.text_input("Téléphone (facultatif)", key="s_tel")
                 s_pwd = st.text_input("Mot de passe", type="password", key="s_pwd")
+                s_rgpd = st.checkbox(
+                    "J'accepte que mes données soient utilisées pour créer mon compte et le matchmaking (voir mention RGPD en bas de page).",
+                    key="s_rgpd"
+                )
                 if st.button("Créer mon compte", use_container_width=True, key="btn_signup"):
                     if not (s_prenom and s_nom and s_email and s_pwd):
                         st.error("Merci de remplir les champs obligatoires (prénom, nom, e-mail, mot de passe).")
@@ -422,6 +426,8 @@ with col_compte:
                         st.error("Adresse e-mail invalide.")
                     elif len(s_pwd) < 6:
                         st.error("Le mot de passe doit contenir au moins 6 caractères.")
+                    elif not s_rgpd:
+                        st.error("Merci d'accepter la mention RGPD pour créer ton compte.")
                     else:
                         cree = create_user(s_email, s_pwd, s_prenom, s_nom, s_tel)
                         if cree:
@@ -980,4 +986,22 @@ with tab7:
 
 # --- PIED DE PAGE ---
 st.divider()
+
+with st.expander("🔒 Politique de confidentialité & mention RGPD"):
+    st.markdown("""
+    **Responsable du traitement :** Camil (@maths_demo) — *[camil akrouf / reconnect-ex , camilakrouf@gmail.com]*.
+
+    **Données collectées :** lorsque tu crées un compte, nous collectons ton prénom, ton nom, ton adresse e-mail, un mot de passe (stocké de façon chiffrée, jamais en clair) et, si tu le souhaites, ton numéro de téléphone. Nous conservons également les résultats de ton Test d'Attachement et ton score de probabilité si tu es connecté(e) au moment du calcul.
+
+    **Finalité :** ces données servent uniquement à la création et à la gestion de ton compte, ainsi qu'à la fonctionnalité de matchmaking (mise en relation avec des membres ayant un profil similaire au tien). Elles ne sont ni vendues, ni cédées, ni partagées avec des tiers à des fins commerciales.
+
+    **Base légale :** ton consentement, donné explicitement en cochant la case dédiée lors de l'inscription.
+
+    **Durée de conservation :** tes données sont conservées tant que ton compte est actif. Tu peux en demander la suppression à tout moment.
+
+    **Tes droits :** conformément au RGPD, tu disposes d'un droit d'accès, de rectification, d'effacement, de limitation et d'opposition concernant tes données personnelles. Pour exercer ces droits, contacte-nous à *[adresse e-mail de contact à compléter]*. Tu disposes également du droit d'introduire une réclamation auprès de la CNIL (www.cnil.fr).
+
+    *Cette mention est fournie à titre indicatif et doit être adaptée (identité du responsable, contact, hébergeur des données) avant toute mise en ligne publique de l'application.*
+    """)
+
 st.caption("<p style='text-align:center; color:#8E7C93; font-size:0.9rem;'>Re-Connect par Camil (@maths_demo). Tous droits réservés 2026. Code conçu avec amour et rigueur mathématique.</p>", unsafe_allow_html=True)
