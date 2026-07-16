@@ -708,9 +708,44 @@ with tab2:
         </div>
         """, unsafe_allow_html=True)
         st.info("💡 **Génial !** Ton profil a été mis en mémoire. Les prédictions et conseils de l'onglet **L'Algorithme** s'y sont automatiquement adaptés.")
-
 # ==========================================
-# ONGLET 3 : LE TRACKER DE SILENCE RADIO
+# ONGLET 3 : MATCHMAKING
+# ==========================================
+with tab7:
+    st.markdown("""
+    <div class='custom-card'>
+        <span class='badge-tip'>NOUVELLE RENCONTRE</span>
+        <h3>💞 Rencontre des profils qui te ressemblent</h3>
+        <p>Une fois ton score de probabilité calculé et ton Test d'Attachement réalisé, crée un compte gratuit pour être mis(e) en relation avec d'autres membres vivant une situation similaire à la tienne.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if not st.session_state.logged_in_user:
+        st.info("👤 Crée un compte gratuit (bouton en haut à droite) pour débloquer le matchmaking. Il te faut juste un e-mail et un mot de passe — le téléphone est facultatif.")
+    elif not st.session_state.attachment_style:
+        st.warning("🧩 Fais d'abord le **Test d'Attachement** dans l'onglet dédié pour être matché(e).")
+    else:
+        mon_score = get_my_score(st.session_state.logged_in_user["email"])
+        matchs = get_matchs(st.session_state.logged_in_user["email"], st.session_state.attachment_style, mon_score or 0)
+
+        if not matchs:
+            st.info("Aucun autre membre pour le moment. Reviens un peu plus tard, la communauté grandit chaque jour !")
+        else:
+            st.markdown(f"##### {len(matchs)} profil(s) proche(s) du tien")
+            cols = st.columns(3)
+            for i, m in enumerate(matchs):
+                with cols[i % 3]:
+                    score_txt = f"{m['score']:.0f}%" if m['score'] is not None else "—"
+                    st.markdown(f"""
+                    <div class='custom-card' style='text-align:center;'>
+                        <div style='width:60px; height:60px; border-radius:50%; background:linear-gradient(135deg, #8E7C93 0%, #B56576 100%); margin:0 auto 10px auto; display:flex; align-items:center; justify-content:center; color:white; font-weight:700; font-size:1.4rem;'>{m['prenom'][0].upper()}</div>
+                        <b>{m['prenom']}</b><br>
+                        <span style='font-size:0.85rem; color:#8E7C93;'>Style : {m['style'] or '—'}</span><br>
+                        <span style='font-size:0.85rem; color:#8E7C93;'>Score : {score_txt}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+# ==========================================
+# ONGLET 4 : LE TRACKER DE SILENCE RADIO
 # ==========================================
 with tab3:
     st.markdown("""
@@ -753,7 +788,7 @@ with tab3:
             st.success("👑 **Niveau 4 : L'Indépendance** (Jours 26 à 30)\nTu es maître de ton destin. Si tu le recontactes, ce sera par choix logique, pas par manque.")
 
 # ==========================================
-# ONGLET 4 : L'ENCYCLOPÉDIE DE TOUS LES CAS (CONSEILS AUGMENTÉS)
+# ONGLET 5 : L'ENCYCLOPÉDIE DE TOUS LES CAS (CONSEILS AUGMENTÉS)
 # ==========================================
 with tab4:
     st.markdown("""
@@ -882,7 +917,7 @@ with tab4:
         """, unsafe_allow_html=True)
 
 # ==========================================
-# ONGLET 5 : LE DICTIONNAIRE SMS (SCRIPTS PRÊTS À L'EMPLOI)
+# ONGLET 6 : LE DICTIONNAIRE SMS (SCRIPTS PRÊTS À L'EMPLOI)
 # ==========================================
 with tab5:
     st.markdown("""
@@ -918,7 +953,7 @@ with tab5:
     """)
 
 # ==========================================
-# ONGLET 6 : LE MUR SOCIAL / COMMUNAUTÉ
+# ONGLET 7 : LE MUR SOCIAL / COMMUNAUTÉ
 # ==========================================
 with tab6:
     st.markdown("""
@@ -947,42 +982,7 @@ with tab6:
         </div>
         """, unsafe_allow_html=True)
 
-# ==========================================
-# ONGLET 7 : MATCHMAKING
-# ==========================================
-with tab7:
-    st.markdown("""
-    <div class='custom-card'>
-        <span class='badge-tip'>NOUVELLE RENCONTRE</span>
-        <h3>💞 Rencontre des profils qui te ressemblent</h3>
-        <p>Une fois ton score de probabilité calculé et ton Test d'Attachement réalisé, crée un compte gratuit pour être mis(e) en relation avec d'autres membres vivant une situation similaire à la tienne.</p>
-    </div>
-    """, unsafe_allow_html=True)
 
-    if not st.session_state.logged_in_user:
-        st.info("👤 Crée un compte gratuit (bouton en haut à droite) pour débloquer le matchmaking. Il te faut juste un e-mail et un mot de passe — le téléphone est facultatif.")
-    elif not st.session_state.attachment_style:
-        st.warning("🧩 Fais d'abord le **Test d'Attachement** dans l'onglet dédié pour être matché(e).")
-    else:
-        mon_score = get_my_score(st.session_state.logged_in_user["email"])
-        matchs = get_matchs(st.session_state.logged_in_user["email"], st.session_state.attachment_style, mon_score or 0)
-
-        if not matchs:
-            st.info("Aucun autre membre pour le moment. Reviens un peu plus tard, la communauté grandit chaque jour !")
-        else:
-            st.markdown(f"##### {len(matchs)} profil(s) proche(s) du tien")
-            cols = st.columns(3)
-            for i, m in enumerate(matchs):
-                with cols[i % 3]:
-                    score_txt = f"{m['score']:.0f}%" if m['score'] is not None else "—"
-                    st.markdown(f"""
-                    <div class='custom-card' style='text-align:center;'>
-                        <div style='width:60px; height:60px; border-radius:50%; background:linear-gradient(135deg, #8E7C93 0%, #B56576 100%); margin:0 auto 10px auto; display:flex; align-items:center; justify-content:center; color:white; font-weight:700; font-size:1.4rem;'>{m['prenom'][0].upper()}</div>
-                        <b>{m['prenom']}</b><br>
-                        <span style='font-size:0.85rem; color:#8E7C93;'>Style : {m['style'] or '—'}</span><br>
-                        <span style='font-size:0.85rem; color:#8E7C93;'>Score : {score_txt}</span>
-                    </div>
-                    """, unsafe_allow_html=True)
 
 # --- PIED DE PAGE ---
 st.divider()
