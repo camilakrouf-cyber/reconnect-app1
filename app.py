@@ -3,6 +3,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageFont
 import io
+import os
+import re
+import hashlib
+import sqlite3
 import datetime
 
 # --- CONFIGURATION DE LA PAGE ---
@@ -241,6 +245,104 @@ def get_conseils_personnalises(raison, style, entourage, autre_personne):
 
     return conseils
 
+# --- SYSTÈME DE COMPTES & MATCHMAKING (BASE DE DONNÉES LOCALE) ---
+DB_PATH = "reconnect_users.db"
+EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            email TEXT PRIMARY KEY,
+            password_hash TEXT NOT NULL,
+            salt TEXT NOT NULL,
+            prenom TEXT NOT NULL,
+            nom TEXT NOT NULL,
+            telephone TEXT,
+            attachment_style TEXT,
+            score REAL,
+            created_at TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def hash_password(password, salt_hex=None):
+    if salt_hex is None:
+        salt_hex = os.urandom(16).hex()
+    pw_hash = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), bytes.fromhex(salt_hex), 100_000).hex()
+    return pw_hash, salt_hex
+
+def create_user(email, password, prenom, nom, telephone):
+    pw_hash, salt_hex = hash_password(password)
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    try:
+        c.execute(
+            "INSERT INTO users (email, password_hash, salt, prenom, nom, telephone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (email.lower().strip(), pw_hash, salt_hex, prenom.strip(), nom.strip(), telephone.strip() if telephone else None, datetime.datetime.now().isoformat())
+        )
+        conn.commit()
+        ok = True
+    except sqlite3.IntegrityError:
+        ok = False
+    conn.close()
+    return ok
+
+def verify_login(email, password):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT password_hash, salt, prenom, nom FROM users WHERE email = ?", (email.lower().strip(),))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return None
+    stored_hash, salt_hex, prenom, nom = row
+    test_hash, _ = hash_password(password, salt_hex)
+    if test_hash == stored_hash:
+        return {"email": email.lower().strip(), "prenom": prenom, "nom": nom}
+    return None
+
+def update_user_resultats(email, attachment_style=None, score=None):
+    if not email:
+        return
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    if attachment_style is not None:
+        c.execute("UPDATE users SET attachment_style = ? WHERE email = ?", (attachment_style, email))
+    if score is not None:
+        c.execute("UPDATE users SET score = ? WHERE email = ?", (float(score), email))
+    conn.commit()
+    conn.close()
+
+def get_my_score(email):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT score FROM users WHERE email = ?", (email,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row and row[0] is not None else None
+
+def get_matchs(email, attachment_style, score, limit=12):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT prenom, attachment_style, score FROM users WHERE email != ? AND score IS NOT NULL", (email,))
+    rows = c.fetchall()
+    conn.close()
+    matchs = []
+    for prenom, r_style, r_score in rows:
+        style_ecart = 0 if (attachment_style and r_style == attachment_style) else 20
+        score_ecart = abs((score or 0) - r_score)
+        matchs.append({"prenom": prenom, "style": r_style, "score": r_score, "proximite": style_ecart + score_ecart})
+    matchs.sort(key=lambda x: x["proximite"])
+    return matchs[:limit]
+
+if 'logged_in_user' not in st.session_state:
+    st.session_state.logged_in_user = None
+
 # --- BARRE LATÉRALE ---
 with st.sidebar:
     st.markdown("<h3 style='text-align: center; color: #4E3D53;'>👤 Espace Personnel</h3>", unsafe_allow_html=True)
@@ -280,6 +382,53 @@ with st.sidebar:
             st.success("Inscription enregistrée. À dimanche prochain.")
         else:
             st.error("Format d'adresse invalide.")
+
+# --- BARRE DE COMPTE (HAUT DROITE, COMME SUR INSTAGRAM) ---
+col_espace, col_compte = st.columns([7, 1])
+with col_compte:
+    if st.session_state.logged_in_user:
+        initiale = st.session_state.logged_in_user["prenom"][0].upper()
+        with st.popover(f"👤 {initiale}", use_container_width=True):
+            st.markdown(f"**{st.session_state.logged_in_user['prenom']} {st.session_state.logged_in_user['nom']}**")
+            st.caption(st.session_state.logged_in_user["email"])
+            if st.button("Se déconnecter", use_container_width=True, key="btn_logout"):
+                st.session_state.logged_in_user = None
+                st.rerun()
+    else:
+        with st.popover("👤 Compte", use_container_width=True):
+            mode = st.radio("", ["Se connecter", "Créer un compte"], horizontal=True, key="auth_mode_radio", label_visibility="collapsed")
+
+            if mode == "Se connecter":
+                login_email = st.text_input("Adresse e-mail", key="login_email")
+                login_pwd = st.text_input("Mot de passe", type="password", key="login_pwd")
+                if st.button("Se connecter", use_container_width=True, key="btn_login"):
+                    utilisateur = verify_login(login_email, login_pwd)
+                    if utilisateur:
+                        st.session_state.logged_in_user = utilisateur
+                        st.rerun()
+                    else:
+                        st.error("E-mail ou mot de passe incorrect.")
+            else:
+                st.caption("Le numéro de téléphone est facultatif.")
+                s_prenom = st.text_input("Prénom", key="s_prenom")
+                s_nom = st.text_input("Nom", key="s_nom")
+                s_email = st.text_input("Adresse e-mail", key="s_email")
+                s_tel = st.text_input("Téléphone (facultatif)", key="s_tel")
+                s_pwd = st.text_input("Mot de passe", type="password", key="s_pwd")
+                if st.button("Créer mon compte", use_container_width=True, key="btn_signup"):
+                    if not (s_prenom and s_nom and s_email and s_pwd):
+                        st.error("Merci de remplir les champs obligatoires (prénom, nom, e-mail, mot de passe).")
+                    elif not EMAIL_REGEX.match(s_email):
+                        st.error("Adresse e-mail invalide.")
+                    elif len(s_pwd) < 6:
+                        st.error("Le mot de passe doit contenir au moins 6 caractères.")
+                    else:
+                        cree = create_user(s_email, s_pwd, s_prenom, s_nom, s_tel)
+                        if cree:
+                            st.session_state.logged_in_user = {"email": s_email.lower().strip(), "prenom": s_prenom.strip(), "nom": s_nom.strip()}
+                            st.rerun()
+                        else:
+                            st.error("Un compte existe déjà avec cet e-mail.")
 
 # --- BANNIÈRE PRINCIPALE ---
 st.markdown("""
@@ -322,13 +471,14 @@ if st.session_state.panic_mode:
     st.divider()
 
 # --- STRUCTURE DES ONGLETS ---
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🌙 L'Algorithme (Calcul)", 
     "🧩 Test d'Attachement XXL", 
     "📅 Le Tracker 30 Jours", 
     "🧭 L'Encyclopédie des Cas",
     "💬 Le Dictionnaire SMS",
-    "🌟 La Communauté"
+    "🌟 La Communauté",
+    "💞 Matchmaking"
 ])
 
 # ==========================================
@@ -401,6 +551,9 @@ with tab1:
         courbe_proba[t_jours <= 7] = courbe_proba[t_jours <= 7] * 0.25 
         courbe_proba = np.clip(courbe_proba, 0, 98.0) 
         proba_actuelle = np.interp(t_actuel, t_jours, courbe_proba)
+
+        if st.session_state.logged_in_user:
+            update_user_resultats(st.session_state.logged_in_user["email"], score=float(proba_actuelle))
 
         # Affichage du score
         st.markdown(f"""
@@ -538,6 +691,9 @@ with tab2:
             description = "Tu disposes de bases saines pour communiquer et accepter la réalité. Tu souffres de la rupture, mais tu as conscience de ta propre valeur indépendamment de ton ex. **La clé : utiliser ce calme intérieur pour te reconstruire de façon mature.**"
             
         st.session_state.attachment_style = style
+
+        if st.session_state.logged_in_user:
+            update_user_resultats(st.session_state.logged_in_user["email"], attachment_style=style)
         
         st.markdown(f"""
         <div style='background-color: #F4EBE8; border-left: 6px solid #B56576; padding: 25px; border-radius: 12px; margin-top:20px;'>
@@ -784,6 +940,43 @@ with tab6:
             <p style='margin-top: 10px; font-style: italic; color: #5A5A5A;'>« {t['texte']} »</p>
         </div>
         """, unsafe_allow_html=True)
+
+# ==========================================
+# ONGLET 7 : MATCHMAKING
+# ==========================================
+with tab7:
+    st.markdown("""
+    <div class='custom-card'>
+        <span class='badge-tip'>NOUVELLE RENCONTRE</span>
+        <h3>💞 Rencontre des profils qui te ressemblent</h3>
+        <p>Une fois ton score de probabilité calculé et ton Test d'Attachement réalisé, crée un compte gratuit pour être mis(e) en relation avec d'autres membres vivant une situation similaire à la tienne.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if not st.session_state.logged_in_user:
+        st.info("👤 Crée un compte gratuit (bouton en haut à droite) pour débloquer le matchmaking. Il te faut juste un e-mail et un mot de passe — le téléphone est facultatif.")
+    elif not st.session_state.attachment_style:
+        st.warning("🧩 Fais d'abord le **Test d'Attachement** dans l'onglet dédié pour être matché(e).")
+    else:
+        mon_score = get_my_score(st.session_state.logged_in_user["email"])
+        matchs = get_matchs(st.session_state.logged_in_user["email"], st.session_state.attachment_style, mon_score or 0)
+
+        if not matchs:
+            st.info("Aucun autre membre pour le moment. Reviens un peu plus tard, la communauté grandit chaque jour !")
+        else:
+            st.markdown(f"##### {len(matchs)} profil(s) proche(s) du tien")
+            cols = st.columns(3)
+            for i, m in enumerate(matchs):
+                with cols[i % 3]:
+                    score_txt = f"{m['score']:.0f}%" if m['score'] is not None else "—"
+                    st.markdown(f"""
+                    <div class='custom-card' style='text-align:center;'>
+                        <div style='width:60px; height:60px; border-radius:50%; background:linear-gradient(135deg, #8E7C93 0%, #B56576 100%); margin:0 auto 10px auto; display:flex; align-items:center; justify-content:center; color:white; font-weight:700; font-size:1.4rem;'>{m['prenom'][0].upper()}</div>
+                        <b>{m['prenom']}</b><br>
+                        <span style='font-size:0.85rem; color:#8E7C93;'>Style : {m['style'] or '—'}</span><br>
+                        <span style='font-size:0.85rem; color:#8E7C93;'>Score : {score_txt}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
 
 # --- PIED DE PAGE ---
 st.divider()
